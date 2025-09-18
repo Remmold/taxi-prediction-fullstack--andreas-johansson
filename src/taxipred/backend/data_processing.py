@@ -9,3 +9,7 @@ class TaxiData:
 
     def to_json(self):
         return json.loads(self.df.to_json(orient = "records"))
+
+
+    def fill_nulls(self):
+        
