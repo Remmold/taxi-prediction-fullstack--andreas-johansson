@@ -66,39 +66,46 @@ def repair_taxi_data(df: pd.DataFrame) -> pd.DataFrame:
 ##### machinelearning to fill nulls #####
 def fill_one_null_column(df: pd.DataFrame,target_column:str):
 
-    from sklearn.linear_model import LinearRegression
     train_df = df[df[target_column].isnull() == False]
     predict_df = df[df[target_column].isnull()]
     X = train_df.drop(target_column,axis=1)
     y = train_df[target_column]
 
-def evaluate_linear_regression(X,y):
-        from sklearn.model_selection import train_test_split
-        from sklearn.linear_model import LinearRegression
-        from sklearn.metrics import root_mean_squared_error
 
-        Xtrain, Xtest,ytrain,ytest = train_test_split(X,y,random_state=42,train_size=0.7)
-
-        model = LinearRegression()
-        model.fit(Xtrain,ytrain)
-        
-        y_pred = model.predict(Xtest)
-        return root_mean_squared_error(y_pred=y_pred, y_true=ytest)
-
-def evaluate_random_forest(X, y):
+def find_best_regression_model(X,y):
     from sklearn.model_selection import train_test_split
+    Xtrain, Xtest,ytrain,ytest = train_test_split(X,y,random_state=42,train_size=0.7)
+
+    linear_regression_rsme = evaluate_linear_regression(Xtrain, Xtest,ytrain,ytest)
+    random_forest_rsme = evaluate_random_forest(Xtrain, Xtest,ytrain,ytest)
+
+    best_regression_model = "linear_regression" if linear_regression_rsme<random_forest_rsme else "random_forest"
+    print(f"{linear_regression_rsme=}")
+    print(f"{random_forest_rsme=}")
+
+    return best_regression_model
+
+def evaluate_linear_regression(Xtrain, Xtest,ytrain,ytest):
+
+    from sklearn.linear_model import LinearRegression
+    from sklearn.metrics import root_mean_squared_error
+    model = LinearRegression()
+    model.fit(Xtrain,ytrain)
+    
+    y_pred = model.predict(Xtest)
+    return root_mean_squared_error(y_pred=y_pred, y_true=ytest)
+
+def evaluate_random_forest(Xtrain, Xtest,ytrain,ytest):
+
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.metrics import root_mean_squared_error
 
-
-    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42, train_size=0.7)
-
     model = RandomForestRegressor(n_estimators=100, random_state=42)
 
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
+    model.fit(Xtrain, ytrain)
+    y_pred = model.predict(Xtest)
     
-    return root_mean_squared_error(y_true=y_test, y_pred=y_pred)
+    return root_mean_squared_error(y_true=ytest, y_pred=y_pred)
 
 
 if __name__ == "__main__":
