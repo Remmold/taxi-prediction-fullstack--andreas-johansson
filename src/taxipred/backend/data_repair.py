@@ -72,6 +72,33 @@ def fill_one_null_column(df: pd.DataFrame,target_column:str):
     X = train_df.drop(target_column,axis=1)
     y = train_df[target_column]
 
+def evaluate_linear_regression(X,y):
+        from sklearn.model_selection import train_test_split
+        from sklearn.linear_model import LinearRegression
+        from sklearn.metrics import root_mean_squared_error
+
+        Xtrain, Xtest,ytrain,ytest = train_test_split(X,y,random_state=42,train_size=0.7)
+
+        model = LinearRegression()
+        model.fit(Xtrain,ytrain)
+        
+        y_pred = model.predict(Xtest)
+        return root_mean_squared_error(y_pred=y_pred, y_true=ytest)
+
+def evaluate_random_forest(X, y):
+    from sklearn.model_selection import train_test_split
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.metrics import root_mean_squared_error
+
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, random_state=42, train_size=0.7)
+
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    
+    return root_mean_squared_error(y_true=y_test, y_pred=y_pred)
 
 
 if __name__ == "__main__":
