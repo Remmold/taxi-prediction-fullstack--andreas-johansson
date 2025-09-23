@@ -64,48 +64,40 @@ def repair_taxi_data(df: pd.DataFrame) -> pd.DataFrame:
 
 
 ##### machinelearning to fill nulls #####
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
 def fill_one_null_column(df: pd.DataFrame,target_column:str):
 
     train_df = df[df[target_column].isnull() == False]
     predict_df = df[df[target_column].isnull()]
     X = train_df.drop(target_column,axis=1)
     y = train_df[target_column]
-
+    find_best_regression_model(X,y)
 
 def find_best_regression_model(X,y):
+    """Function tries both linear regression/random forest to predict column values and returns
+       the model with lowest rsme"""
     from sklearn.model_selection import train_test_split
+
     Xtrain, Xtest,ytrain,ytest = train_test_split(X,y,random_state=42,train_size=0.7)
 
-    linear_regression_rsme = evaluate_linear_regression(Xtrain, Xtest,ytrain,ytest)
-    random_forest_rsme = evaluate_random_forest(Xtrain, Xtest,ytrain,ytest)
+    lr_model = LinearRegression().fit(Xtrain,ytrain)
+    rf_model = RandomForestRegressor(n_estimators=100, random_state=42).fit(Xtrain,ytrain)
 
-    best_regression_model = "linear_regression" if linear_regression_rsme<random_forest_rsme else "random_forest"
+    linear_regression_rsme = calculate_rsme(lr_model,ytest)
+    random_forest_rsme = calculate_rsme(rf_model,ytest)
+
+    model = lr_model if linear_regression_rsme<random_forest_rsme else rf_model
     print(f"{linear_regression_rsme=}")
     print(f"{random_forest_rsme=}")
 
-    return best_regression_model
-
-def evaluate_linear_regression(Xtrain, Xtest,ytrain,ytest):
-
-    from sklearn.linear_model import LinearRegression
+    return model
+def calculate_rsme(model,ytest):
     from sklearn.metrics import root_mean_squared_error
-    model = LinearRegression()
-    model.fit(Xtrain,ytrain)
-    
-    y_pred = model.predict(Xtest)
-    return root_mean_squared_error(y_pred=y_pred, y_true=ytest)
-
-def evaluate_random_forest(Xtrain, Xtest,ytrain,ytest):
-
-    from sklearn.ensemble import RandomForestRegressor
-    from sklearn.metrics import root_mean_squared_error
-
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-
-    model.fit(Xtrain, ytrain)
-    y_pred = model.predict(Xtest)
-    
-    return root_mean_squared_error(y_true=ytest, y_pred=y_pred)
+    y_pred = model.predict(ytest)
+    print(root_mean_squared_error(y_pred=y_pred,y_true=ytest))
+def train_and_evaluate_model(model,X,y):
+    pass
 
 
 if __name__ == "__main__":
