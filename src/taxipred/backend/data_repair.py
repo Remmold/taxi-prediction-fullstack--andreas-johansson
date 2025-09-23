@@ -67,7 +67,9 @@ def repair_taxi_data(df: pd.DataFrame) -> pd.DataFrame:
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 def fill_one_numeric_column(df: pd.DataFrame,target_column:str,max_cat_values:int = 5):
+
     """this function fills in nullvalues of one numeric column expecting maximum 1 null value per row"""
+
     # creates a df with only the features and creates encoded df
     features_df = df.drop(target_column,axis=1)
     encoded_df = pd.get_dummies(data=features_df,columns=find_categorical_columns(features_df,max_cat_values=max_cat_values))
@@ -77,17 +79,27 @@ def fill_one_numeric_column(df: pd.DataFrame,target_column:str,max_cat_values:in
     train_df = encoded_df[encoded_df[target_column].isnull() == False]
     predict_df = encoded_df[encoded_df[target_column].isnull()]
 
+
     # Separates features from target
     X = train_df.drop(target_column,axis=1)
     y = train_df[target_column]
+    # time to drop Nans from X and same rows in y to make sure model works
+    clean_indices = X.dropna().index
+
+    X_clean = X.loc[clean_indices]
+    y_clean = y.loc[clean_indices]
 
     # asseses various regression models on rsme score and picks best one
-    best_model = find_best_regression_model(X,y)
+    best_model = find_best_regression_model(X_clean,y_clean)
 
-    # makes real assesment trying to fill in nulls
+    # cleaning X of nulls
     X_predict = predict_df.drop(target_column,axis=1)
-    y_pred = best_model.predict(X_predict)
-    predict_df[target_column] = y_pred
+    X_predict_clean = X_predict.dropna()
+    
+    # makes real assesment trying to fill in nulls
+    predictions = best_model.predict(X_predict_clean)
+
+    predict_df.loc[X_predict_clean.index, target_column] = predictions
 
     completed_df = pd.concat([train_df,predict_df])
     return completed_df
