@@ -74,6 +74,16 @@ def fill_one_null_column(df: pd.DataFrame,target_column:str):
     y = train_df[target_column]
     find_best_regression_model(X,y)
 
+def find_categorical_columns(df:pd.DataFrame,max_values:int) -> list[str]: 
+    """function figures out which columns should be treated as categorical"""
+    category_columns = []
+    for column_name in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[column_name]) or df[column_name].nunique() < max_values:
+            category_columns.append(column_name)
+    return category_columns
+            
+    
+
 def find_best_regression_model(X,y):
     """Function tries both linear regression/random forest to predict column values and returns
        the model with lowest rsme"""
@@ -84,20 +94,18 @@ def find_best_regression_model(X,y):
     lr_model = LinearRegression().fit(Xtrain,ytrain)
     rf_model = RandomForestRegressor(n_estimators=100, random_state=42).fit(Xtrain,ytrain)
 
-    linear_regression_rsme = calculate_rsme(lr_model,ytest)
-    random_forest_rsme = calculate_rsme(rf_model,ytest)
+    linear_regression_rsme = calculate_rsme(lr_model,Xtest,ytest)
+    random_forest_rsme = calculate_rsme(rf_model,Xtest,ytest)
 
     model = lr_model if linear_regression_rsme<random_forest_rsme else rf_model
     print(f"{linear_regression_rsme=}")
     print(f"{random_forest_rsme=}")
 
     return model
-def calculate_rsme(model,ytest):
+def calculate_rsme(model,Xtest,ytest):
     from sklearn.metrics import root_mean_squared_error
-    y_pred = model.predict(ytest)
-    print(root_mean_squared_error(y_pred=y_pred,y_true=ytest))
-def train_and_evaluate_model(model,X,y):
-    pass
+    y_pred = model.predict(Xtest)
+    return root_mean_squared_error(y_pred=y_pred,y_true=ytest)
 
 
 if __name__ == "__main__":
