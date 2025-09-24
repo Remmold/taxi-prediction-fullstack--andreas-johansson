@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 import json
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
@@ -9,12 +8,12 @@ from taxipred.utils.constants import ORIGINAL_CSV_PATH, ALTERED_CSV_PATH ,COLUMN
 
 
 class TaxiData:
-    def __init__(self):
-        self.df = pd.read_csv(ORIGINAL_CSV_PATH)
+    def __init__(self,path):
+        self.df = pd.read_csv(path)
 
     def to_json(self):
         return json.loads(self.df.to_json(orient="records"))
-
+        
     def repair_data_using_algebra(self):
         """
         Repairs price and distance columns using a known fare calculation formula
@@ -54,12 +53,12 @@ class TaxiData:
 
         self._log_repair_status('After Repair', [COLUMNS["PRICE"], COLUMNS["DISTANCE"]])
 
-    def fill_all_null(self, max_cat_values: int = 5):
+    def repair_using_imputation(self, max_cat_values: int = 5):
         """
         This method takes a dataframe and attempts to fill null values inside all columns
         by iteratively training models on the non-null data.
         """
-        cat_columns = self._find_categorical_columns(self.df, max_cat_values)
+        cat_columns = find_categorical_columns(self.df, max_cat_values)
 
         while self.df.isnull().sum().sum() > 0:
             total_nans_before = self.df.isnull().sum().sum()
@@ -96,7 +95,7 @@ class TaxiData:
         """
         df_copy = df.copy()
         features_df = df_copy.drop(target_column, axis=1)
-        cat_cols = self._find_categorical_columns(features_df, max_cat_values=max_cat_values)
+        cat_cols = find_categorical_columns(features_df, max_cat_values=max_cat_values)
         encoded_df = pd.get_dummies(data=features_df, columns=cat_cols)
         encoded_df[target_column] = df_copy[target_column]
         train_df = encoded_df[encoded_df[target_column].notnull()]
@@ -148,7 +147,7 @@ class TaxiData:
         inverse_map = self._inverse_dict(forward_map)
         y_encoded = y.map(forward_map)
 
-        cat_cols = self._find_categorical_columns(X, max_cat_values=max_cat_values)
+        cat_cols = find_categorical_columns(X, max_cat_values=max_cat_values)
         X_encoded = pd.get_dummies(X, columns=cat_cols)
 
         clean_indices = X_encoded.dropna().index
@@ -162,7 +161,7 @@ class TaxiData:
 
         X_predict = predict_df_orig.drop(target_column, axis=1)
 
-        X_predict_encoded = pd.get_dummies(X_predict, columns=self._find_categorical_columns(X_predict, max_cat_values=max_cat_values))
+        X_predict_encoded = pd.get_dummies(X_predict, columns=find_categorical_columns(X_predict, max_cat_values=max_cat_values))
         X_predict_encoded = X_predict_encoded.reindex(columns=X_encoded.columns, fill_value=0)
 
         predict_indices = X_predict_encoded.dropna().index
@@ -175,14 +174,6 @@ class TaxiData:
         text_predictions = pd.Series(numeric_predictions, index=predict_indices).map(inverse_map)
         return text_predictions
 
-    @staticmethod
-    def _find_categorical_columns(df:pd.DataFrame, max_cat_values:int = 5) -> list[str]:
-        """function figures out which columns should be treated as categorical"""
-        category_columns = []
-        for column_name in df.columns:
-            if not pd.api.types.is_numeric_dtype(df[column_name]) or df[column_name].nunique() < max_cat_values:
-                category_columns.append(column_name)
-        return category_columns
 
     @staticmethod
     def _find_best_regression_model(X, y):
@@ -219,14 +210,23 @@ class TaxiData:
         inverse_map = {value: key for key, value in map.items()}
         return inverse_map
     
+@staticmethod
+def find_categorical_columns(df:pd.DataFrame, max_cat_values:int = 5) -> list[str]:
+    """function figures out which columns should be treated as categorical"""
+    category_columns = []
+    for column_name in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[column_name]) or df[column_name].nunique() < max_cat_values:
+            category_columns.append(column_name)
+    return category_columns
+    
 if __name__ == "__main__":
-    taxi_data = TaxiData()
+    taxi_data = TaxiData(ORIGINAL_CSV_PATH)
     print("Data before cleaning")
     print(taxi_data.df.info())
     print("Data after algebra cleaning")
     taxi_data.repair_data_using_algebra()
     print(taxi_data.df.info())
     print("Data after using machinelearning repair")
-    taxi_data.fill_all_null(5)
+    taxi_data.repair_using_imputation(5)
     print(taxi_data.df.info())
     
