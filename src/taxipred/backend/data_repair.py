@@ -263,6 +263,7 @@ def fill_one_categorical_column(df: pd.DataFrame, target_column: str, max_cat_va
     return text_predictions
 
 def find_best_classification_model(X,y):
+    """note that currently only know how to operate 1 model. potentially refactor this"""
     from sklearn.ensemble import RandomForestClassifier
     rf_model = RandomForestClassifier()
 
