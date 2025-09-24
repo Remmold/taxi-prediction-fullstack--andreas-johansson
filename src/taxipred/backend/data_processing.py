@@ -1,6 +1,7 @@
 from taxipred.utils.constants import TAXI_CSV_PATH
 import pandas as pd
 import json
+import numpy as np
 
 
 class TaxiData:
@@ -9,3 +10,11 @@ class TaxiData:
 
     def to_json(self):
         return json.loads(self.df.to_json(orient = "records"))
+
+
+    def fill_nulls(self):
+        pass
+
+
+    
+
