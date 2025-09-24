@@ -66,46 +66,106 @@ def repair_taxi_data(df: pd.DataFrame) -> pd.DataFrame:
 ##### machinelearning to fill nulls #####
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
-def fill_one_numeric_column(df: pd.DataFrame,target_column:str,max_cat_values:int = 5):
+def fill_all_null(df: pd.DataFrame, max_cat_values: int = 5) -> pd.DataFrame:
+    """
+    This method takes a dataframe and attempts to fill null values inside all columns
+    by iteratively training models on the non-null data.
+    """
+    cat_columns = find_categorical_columns(df, max_cat_values)
+    
+    # Loop as long as there are any null values in the DataFrame
+    while df.isnull().sum().sum() > 0:
+        total_nans_before = df.isnull().sum().sum()
+        
+        # Get a list of columns that currently have nulls
+        cols_with_nulls = df.columns[df.isnull().any()].tolist()
+        
+        # Process one column at a time
+        for col_name in cols_with_nulls:
+            print(f"Attempting to fill column: {col_name}")
+            
+            if col_name in cat_columns:
+                predictions = fill_one_categorical_column(df=df, target_column=col_name, max_cat_values=max_cat_values)
+            else:
+                predictions = fill_one_numeric_column(df=df, target_column=col_name, max_cat_values=max_cat_values)
+            
+            # If predictions were made, update the DataFrame
+            if not predictions.empty:
+                df.loc[predictions.index, col_name] = predictions
+                print(f"Filled {len(predictions)} values in {col_name}.")
 
-    """this function fills in nullvalues of one numeric column expecting maximum 1 null value per row"""
+        # Safety break: if no NaNs were filled in a full pass, exit the loop
+        if df.isnull().sum().sum() == total_nans_before:
+            print("Could not fill any more NaNs. Exiting.")
+            break
+            
+    return df
 
-    # creates a df with only the features and creates encoded df
-    features_df = df.drop(target_column,axis=1)
-    encoded_df = pd.get_dummies(data=features_df,columns=find_categorical_columns(features_df,max_cat_values=max_cat_values))
-    # adds target column to encoded df
-    encoded_df[target_column] = df[target_column]
-    # splitting df on nulls
-    train_df = encoded_df[encoded_df[target_column].isnull() == False]
+
+
+
+def fill_one_numeric_column(df: pd.DataFrame, target_column: str, max_cat_values: int = 5) -> pd.Series:
+    """
+    This function trains a model and returns a Series containing the
+    predicted values for the nulls in the target column.
+    """
+    # Create a copy to avoid modifying the original df inside the function
+    df_copy = df.copy()
+
+    # Create a df with only the features and create encoded df
+    features_df = df_copy.drop(target_column, axis=1)
+    # find categorical columns to be one-hot encoded
+    cat_cols = find_categorical_columns(features_df, max_cat_values=max_cat_values)
+    encoded_df = pd.get_dummies(data=features_df, columns=cat_cols)
+
+    # Add target column to encoded df
+    encoded_df[target_column] = df_copy[target_column]
+
+    # Splitting df on nulls
+    train_df = encoded_df[encoded_df[target_column].notnull()]
     predict_df = encoded_df[encoded_df[target_column].isnull()]
 
+    # If there's nothing to predict, return an empty Series
+    if predict_df.empty:
+        return pd.Series(dtype=float)
 
     # Separates features from target
-    X = train_df.drop(target_column,axis=1)
-    y = train_df[target_column]
-    # time to drop Nans from X and same rows in y to make sure model works
-    clean_indices = X.dropna().index
-
-    X_clean = X.loc[clean_indices]
-    y_clean = y.loc[clean_indices]
-
-    # asseses various regression models on rsme score and picks best one
-    best_model = find_best_regression_model(X_clean,y_clean)
-
-    # cleaning X of nulls
-    X_predict = predict_df.drop(target_column,axis=1)
-    X_predict_clean = X_predict.dropna()
+    X_train = train_df.drop(target_column, axis=1)
+    y_train = train_df[target_column]
     
-    # makes real assesment trying to fill in nulls
+    # The features for the rows we want to predict on
+    X_predict = predict_df.drop(target_column, axis=1)
+
+    # Drop any rows with remaining NaNs in the training set
+    clean_indices = X_train.dropna().index
+    X_train_clean = X_train.loc[clean_indices]
+    y_train_clean = y_train.loc[clean_indices]
+    
+    # If no clean training data is available, we can't predict
+    if X_train_clean.empty:
+        return pd.Series(dtype=float)
+
+    # Find the best model
+    best_model = find_best_regression_model(X_train_clean, y_train_clean)
+    
+    # Make sure prediction columns match training columns
+    X_predict = X_predict.reindex(columns=X_train_clean.columns, fill_value=0)
+    
+    # Drop rows with NaNs in the prediction set as well
+    predict_indices = X_predict.dropna().index
+    X_predict_clean = X_predict.loc[predict_indices]
+    
+    if X_predict_clean.empty:
+        return pd.Series(dtype=float)
+
+    # Make predictions
     predictions = best_model.predict(X_predict_clean)
 
-    predict_df.loc[X_predict_clean.index, target_column] = predictions
-
-    completed_df = pd.concat([train_df,predict_df])
-    return completed_df
+    # Return predictions as a Series with the correct index
+    return pd.Series(predictions, index=predict_indices)
     
 
-def find_categorical_columns(df:pd.DataFrame,max_cat_values:int) -> list[str]: 
+def find_categorical_columns(df:pd.DataFrame,max_cat_values:int = 5) -> list[str]: 
     """function figures out which columns should be treated as categorical"""
     category_columns = []
     for column_name in df.columns:
@@ -142,6 +202,79 @@ def calculate_rsme(model,Xtest,ytest):
     from sklearn.metrics import root_mean_squared_error
     y_pred = model.predict(Xtest)
     return root_mean_squared_error(y_pred=y_pred,y_true=ytest)
+
+def fill_one_categorical_column(df: pd.DataFrame, target_column: str, max_cat_values: int = 5) -> pd.Series:
+    """
+    Fills null values of one categorical column using a classification model
+    and returns the predictions as a Series.
+    """
+    df_copy = df.copy()
+
+    # Split data based on nulls in the target column
+    train_df_orig = df_copy[df_copy[target_column].notnull()]
+    predict_df_orig = df_copy[df_copy[target_column].isnull()]
+
+    if predict_df_orig.empty:
+        return pd.Series(dtype=object)
+
+    # Separate features from target
+    X = train_df_orig.drop(target_column, axis=1)
+    y = train_df_orig[target_column]
+
+    # Create mapping dictionaries and encode y into numbers
+    forward_map = map_category(y)
+    inverse_map = inverse_dict(forward_map)
+    y_encoded = y.map(forward_map)
+
+    # Encode the feature set X
+    cat_cols = find_categorical_columns(X, max_cat_values=max_cat_values)
+    X_encoded = pd.get_dummies(X, columns=cat_cols)
+
+    # Clean NaNs from the training data
+    clean_indices = X_encoded.dropna().index
+    X_train_clean = X_encoded.loc[clean_indices]
+    y_train_clean = y_encoded.loc[clean_indices]
+    
+    if X_train_clean.empty:
+        return pd.Series(dtype=object)
+
+    best_model = find_best_classification_model(X_train_clean, y_train_clean)
+
+    # Prepare the prediction features (X_predict)
+    X_predict = predict_df_orig.drop(target_column, axis=1)
+    
+    # Ensure X_predict has the same columns as X_encoded
+    X_predict_encoded = pd.get_dummies(X_predict, columns=find_categorical_columns(X_predict, max_cat_values=max_cat_values))
+    X_predict_encoded = X_predict_encoded.reindex(columns=X_encoded.columns, fill_value=0)
+
+    # Clean NaNs from the prediction features
+    predict_indices = X_predict_encoded.dropna().index
+    X_predict_clean = X_predict_encoded.loc[predict_indices]
+
+    if X_predict_clean.empty:
+        return pd.Series(dtype=object)
+        
+    # Model predicts numbers (e.g., 0, 1, 2)
+    numeric_predictions = best_model.predict(X_predict_clean)
+    
+    # Convert numbers back to text labels using the inverse_map
+    text_predictions = pd.Series(numeric_predictions, index=predict_indices).map(inverse_map)
+    
+    return text_predictions
+
+def find_best_classification_model(X,y):
+    from sklearn.ensemble import RandomForestClassifier
+    rf_model = RandomForestClassifier()
+
+    rf_model.fit(X,y)
+    return rf_model
+
+def map_category(series:pd.Series)-> dict:
+    mapping_dict = {category: i for i, category in enumerate(series.unique())}
+    return mapping_dict
+def inverse_dict(map:dict):
+    inverse_map = {value: key for key, value in map.items()}
+    return inverse_map
 
 
 if __name__ == "__main__":
