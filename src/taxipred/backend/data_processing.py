@@ -13,7 +13,10 @@ class TaxiData:
 
     def to_json(self):
         return json.loads(self.df.to_json(orient="records"))
-        
+    def drop_columns(self,columns_to_drop:list[str]):
+        self.df.drop(columns=columns_to_drop,inplace=True)
+    def to_csv(self,path):
+        self.df.to_csv(path,index= False)
     def repair_data_using_algebra(self):
         """
         Repairs price and distance columns using a known fare calculation formula
