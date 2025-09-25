@@ -4,16 +4,10 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import root_mean_squared_error,r2_score,mean_absolute_error,mean_squared_error
-from taxipred.utils.constants import ORIGINAL_CSV_PATH, ALTERED_CSV_PATH ,ALGEBRA_COLUMNS,FEATURES_COLUMNS,DATA_PATH
-from pydantic import BaseModel
+from taxipred.utils.constants import ORIGINAL_CSV_PATH, CLEANED_CSV_PATH ,ALGEBRA_COLUMNS,FEATURES_COLUMNS,DATA_PATH
+from taxipred.backend.trip import Trip
 import joblib
-class Trip(BaseModel):
-    Trip_Distance_km:float
-    Time_of_Day:str
-    Day_of_Week:str
-    Passenger_Count:int
-    Traffic_Conditions:str
-    Weather:str
+
 
 class TaxiData:
     def __init__(self,path):
@@ -365,7 +359,7 @@ if __name__ == "__main__":
     Traffic_Conditions='Light',
     Weather='Sunny'
 )
-    data = TaxiData(ALTERED_CSV_PATH)
+    data = TaxiData(CLEANED_CSV_PATH)
     data.train_model()
     
     y_pred = data.predict_trip_price(sample_trip)
