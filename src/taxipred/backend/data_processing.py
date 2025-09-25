@@ -73,42 +73,114 @@ class TaxiData:
 
     def repair_data_using_algebra(self):
         """
-        Repairs price and distance columns using a known fare calculation formula
-        and logs the changes.
+        Repairs all fare-related columns using a known fare calculation formula.
+        This function iteratively fills missing values until no more repairs can be made.
 
         This function modifies the DataFrame in place.
         """
-        self._log_repair_status('Before Repair', [ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["DISTANCE"]])
-
-        price_components = [
-            ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["DISTANCE"], ALGEBRA_COLUMNS["KM_RATE"],
-            ALGEBRA_COLUMNS["DURATION"], ALGEBRA_COLUMNS["MIN_RATE"]
+        # Log the state before any repairs
+        all_algebra_cols = [
+            ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["DISTANCE"], ALGEBRA_COLUMNS["BASE_FARE"],
+            ALGEBRA_COLUMNS["KM_RATE"], ALGEBRA_COLUMNS["DURATION"], ALGEBRA_COLUMNS["MIN_RATE"]
         ]
-        mask_repair_price = self.df[ALGEBRA_COLUMNS["PRICE"]].isnull() & self.df[price_components].notnull().all(axis=1)
+        self._log_repair_status('Before Algebraic Repair', all_algebra_cols)
 
-        if mask_repair_price.any():
-            self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["PRICE"]] = (
-                self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["BASE_FARE"]] +
-                (self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["DISTANCE"]] * self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["KM_RATE"]]) +
-                (self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["DURATION"]] * self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["MIN_RATE"]])
-            )
+        while True:
+            # Track the number of missing values before this pass
+            nans_before_pass = self.df.isnull().sum().sum()
 
-        distance_components = [
-            ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["KM_RATE"], ALGEBRA_COLUMNS["MIN_RATE"],
-            ALGEBRA_COLUMNS["DURATION"], ALGEBRA_COLUMNS["PRICE"]
-        ]
-        mask_repair_distance = self.df[ALGEBRA_COLUMNS["DISTANCE"]].isnull() & self.df[distance_components].notnull().all(axis=1)
-        mask_repair_distance &= (self.df[ALGEBRA_COLUMNS["KM_RATE"]] != 0)
+            # --- 1. Attempt to repair Trip_Price ---
+            price_components = [
+                ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["DISTANCE"], ALGEBRA_COLUMNS["KM_RATE"],
+                ALGEBRA_COLUMNS["DURATION"], ALGEBRA_COLUMNS["MIN_RATE"]
+            ]
+            mask_repair_price = self.df[ALGEBRA_COLUMNS["PRICE"]].isnull() & self.df[price_components].notnull().all(axis=1)
+            if mask_repair_price.any():
+                self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["PRICE"]] = (
+                    self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["BASE_FARE"]] +
+                    (self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["DISTANCE"]] * self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["KM_RATE"]]) +
+                    (self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["DURATION"]] * self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["MIN_RATE"]])
+                )
 
-        if mask_repair_distance.any():
-            self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["DISTANCE"]] = (
-                (self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["PRICE"]] -
-                 self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["BASE_FARE"]] -
-                 (self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["DURATION"]] * self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["MIN_RATE"]])) /
-                self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["KM_RATE"]]
-            )
+            # --- 2. Attempt to repair Trip_Distance_km ---
+            dist_components = [
+                ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["DURATION"],
+                ALGEBRA_COLUMNS["MIN_RATE"], ALGEBRA_COLUMNS["KM_RATE"]
+            ]
+            mask_repair_dist = self.df[ALGEBRA_COLUMNS["DISTANCE"]].isnull() & self.df[dist_components].notnull().all(axis=1)
+            mask_repair_dist &= (self.df[ALGEBRA_COLUMNS["KM_RATE"]] != 0) # Avoid division by zero
+            if mask_repair_dist.any():
+                self.df.loc[mask_repair_dist, ALGEBRA_COLUMNS["DISTANCE"]] = (
+                    (self.df.loc[mask_repair_dist, ALGEBRA_COLUMNS["PRICE"]] -
+                    self.df.loc[mask_repair_dist, ALGEBRA_COLUMNS["BASE_FARE"]] -
+                    (self.df.loc[mask_repair_dist, ALGEBRA_COLUMNS["DURATION"]] * self.df.loc[mask_repair_dist, ALGEBRA_COLUMNS["MIN_RATE"]])) /
+                    self.df.loc[mask_repair_dist, ALGEBRA_COLUMNS["KM_RATE"]]
+                )
 
-        self._log_repair_status('After Repair', [ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["DISTANCE"]])
+            # --- 3. Attempt to repair Base_Fare ---
+            base_components = [
+                ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["DISTANCE"], ALGEBRA_COLUMNS["KM_RATE"],
+                ALGEBRA_COLUMNS["DURATION"], ALGEBRA_COLUMNS["MIN_RATE"]
+            ]
+            mask_repair_base = self.df[ALGEBRA_COLUMNS["BASE_FARE"]].isnull() & self.df[base_components].notnull().all(axis=1)
+            if mask_repair_base.any():
+                self.df.loc[mask_repair_base, ALGEBRA_COLUMNS["BASE_FARE"]] = (
+                    self.df.loc[mask_repair_base, ALGEBRA_COLUMNS["PRICE"]] -
+                    (self.df.loc[mask_repair_base, ALGEBRA_COLUMNS["DISTANCE"]] * self.df.loc[mask_repair_base, ALGEBRA_COLUMNS["KM_RATE"]]) -
+                    (self.df.loc[mask_repair_base, ALGEBRA_COLUMNS["DURATION"]] * self.df.loc[mask_repair_base, ALGEBRA_COLUMNS["MIN_RATE"]])
+                )
+
+            # --- 4. Attempt to repair Per_Km_Rate ---
+            km_rate_components = [
+                ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["DURATION"],
+                ALGEBRA_COLUMNS["MIN_RATE"], ALGEBRA_COLUMNS["DISTANCE"]
+            ]
+            mask_repair_km_rate = self.df[ALGEBRA_COLUMNS["KM_RATE"]].isnull() & self.df[km_rate_components].notnull().all(axis=1)
+            mask_repair_km_rate &= (self.df[ALGEBRA_COLUMNS["DISTANCE"]] != 0) # Avoid division by zero
+            if mask_repair_km_rate.any():
+                self.df.loc[mask_repair_km_rate, ALGEBRA_COLUMNS["KM_RATE"]] = (
+                    (self.df.loc[mask_repair_km_rate, ALGEBRA_COLUMNS["PRICE"]] -
+                    self.df.loc[mask_repair_km_rate, ALGEBRA_COLUMNS["BASE_FARE"]] -
+                    (self.df.loc[mask_repair_km_rate, ALGEBRA_COLUMNS["DURATION"]] * self.df.loc[mask_repair_km_rate, ALGEBRA_COLUMNS["MIN_RATE"]])) /
+                    self.df.loc[mask_repair_km_rate, ALGEBRA_COLUMNS["DISTANCE"]]
+                )
+
+            # --- 5. Attempt to repair Trip_Duration_Minutes ---
+            duration_components = [
+                ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["DISTANCE"],
+                ALGEBRA_COLUMNS["KM_RATE"], ALGEBRA_COLUMNS["MIN_RATE"]
+            ]
+            mask_repair_duration = self.df[ALGEBRA_COLUMNS["DURATION"]].isnull() & self.df[duration_components].notnull().all(axis=1)
+            mask_repair_duration &= (self.df[ALGEBRA_COLUMNS["MIN_RATE"]] != 0) # Avoid division by zero
+            if mask_repair_duration.any():
+                self.df.loc[mask_repair_duration, ALGEBRA_COLUMNS["DURATION"]] = (
+                    (self.df.loc[mask_repair_duration, ALGEBRA_COLUMNS["PRICE"]] -
+                    self.df.loc[mask_repair_duration, ALGEBRA_COLUMNS["BASE_FARE"]] -
+                    (self.df.loc[mask_repair_duration, ALGEBRA_COLUMNS["DISTANCE"]] * self.df.loc[mask_repair_duration, ALGEBRA_COLUMNS["KM_RATE"]])) /
+                    self.df.loc[mask_repair_duration, ALGEBRA_COLUMNS["MIN_RATE"]]
+                )
+
+            # --- 6. Attempt to repair Per_Minute_Rate ---
+            min_rate_components = [
+                ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["DISTANCE"],
+                ALGEBRA_COLUMNS["KM_RATE"], ALGEBRA_COLUMNS["DURATION"]
+            ]
+            mask_repair_min_rate = self.df[ALGEBRA_COLUMNS["MIN_RATE"]].isnull() & self.df[min_rate_components].notnull().all(axis=1)
+            mask_repair_min_rate &= (self.df[ALGEBRA_COLUMNS["DURATION"]] != 0) # Avoid division by zero
+            if mask_repair_min_rate.any():
+                self.df.loc[mask_repair_min_rate, ALGEBRA_COLUMNS["MIN_RATE"]] = (
+                    (self.df.loc[mask_repair_min_rate, ALGEBRA_COLUMNS["PRICE"]] -
+                    self.df.loc[mask_repair_min_rate, ALGEBRA_COLUMNS["BASE_FARE"]] -
+                    (self.df.loc[mask_repair_min_rate, ALGEBRA_COLUMNS["DISTANCE"]] * self.df.loc[mask_repair_min_rate, ALGEBRA_COLUMNS["KM_RATE"]])) /
+                    self.df.loc[mask_repair_min_rate, ALGEBRA_COLUMNS["DURATION"]]
+                )
+
+            # If no NaNs were filled in a full pass, break the loop
+            if self.df.isnull().sum().sum() == nans_before_pass:
+                break
+                
+        # Log the final state after all possible repairs
+        self._log_repair_status('After Algebraic Repair', all_algebra_cols)
 
     def repair_using_imputation(self, max_cat_values: int = 5):
         """
@@ -236,13 +308,16 @@ class TaxiData:
     def _find_best_regression_model(X, y):
         """Function tries both linear regression/random forest to predict column values and returns
         the model with lowest rsme"""
+
         Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, random_state=42, train_size=0.8)
         lr_model = LinearRegression().fit(Xtrain, ytrain)
         rf_model = RandomForestRegressor(n_estimators=100, random_state=42).fit(Xtrain, ytrain)
+
         lr_error_dict = TaxiData._calculate_errors(lr_model, Xtest, ytest)
         rf_error_dict = TaxiData._calculate_errors(rf_model, Xtest, ytest)
         print(f"{lr_error_dict=}")
         print(f"{rf_error_dict=}")
+
         return lr_model if lr_error_dict["rmse"] < rf_error_dict["rmse"] else rf_model
 
     @staticmethod
