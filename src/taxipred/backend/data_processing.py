@@ -3,9 +3,17 @@ import json
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import root_mean_squared_error
-from taxipred.utils.constants import ORIGINAL_CSV_PATH, ALTERED_CSV_PATH ,COLUMNS
-
+from sklearn.metrics import root_mean_squared_error,r2_score,mean_absolute_error,mean_squared_error
+from taxipred.utils.constants import ORIGINAL_CSV_PATH, ALTERED_CSV_PATH ,ALGEBRA_COLUMNS,FEATURES_COLUMNS,DATA_PATH
+from pydantic import BaseModel
+import joblib
+class Trip(BaseModel):
+    Trip_Distance_km:float
+    Time_of_Day:str
+    Day_of_Week:str
+    Passenger_Count:int
+    Traffic_Conditions:str
+    Weather:str
 
 class TaxiData:
     def __init__(self,path):
@@ -16,7 +24,53 @@ class TaxiData:
     def drop_columns(self,columns_to_drop:list[str]):
         self.df.drop(columns=columns_to_drop,inplace=True)
     def to_csv(self,path):
-        self.df.to_csv(path,index= False)
+        self.df.to_csv(path,index = False)
+    def predict_trip_price(self, trip: Trip):
+        # Define the same fixed list of categorical features
+        categorical_features = ['Time_of_Day', 'Day_of_Week', 'Traffic_Conditions', 'Weather']
+
+        # Load the trained model and the training columns
+        model = joblib.load(DATA_PATH / "taxi_model.joblib")
+        training_columns = joblib.load('training_columns.joblib')
+
+        # Create a one-row DataFrame from the input
+        features_df = pd.DataFrame([trip.model_dump()])
+        
+        # Encode only the specified categorical features
+        encoded_df = pd.get_dummies(features_df, columns=categorical_features)
+        
+        # Reindex to ensure the columns perfectly match the training columns
+        encoded_df = encoded_df.reindex(columns=training_columns, fill_value=0)
+        
+        # Make the prediction
+        y_pred = model.predict(encoded_df)
+        
+        # Return the result
+        return y_pred
+    
+    def train_model(self):
+        # Define your categorical features as a fixed list
+        categorical_features = ['Time_of_Day', 'Day_of_Week', 'Traffic_Conditions', 'Weather']
+        
+        # Create a features DataFrame
+        features_df = self.df[FEATURES_COLUMNS]
+        
+        # Encode only the specified categorical features
+        X_encoded = pd.get_dummies(features_df, columns=categorical_features)
+        y = self.df["Trip_Price"]
+        
+        # Save the exact column names the model was trained on
+        training_columns = X_encoded.columns
+        joblib.dump(training_columns, 'training_columns.joblib')
+
+        # Train the model using the encoded data
+        model = self._find_best_regression_model(X=X_encoded, y=y)
+        
+        # Save the trained model
+        joblib.dump(model, DATA_PATH / "taxi_model.joblib")
+
+
+
     def repair_data_using_algebra(self):
         """
         Repairs price and distance columns using a known fare calculation formula
@@ -24,37 +78,37 @@ class TaxiData:
 
         This function modifies the DataFrame in place.
         """
-        self._log_repair_status('Before Repair', [COLUMNS["PRICE"], COLUMNS["DISTANCE"]])
+        self._log_repair_status('Before Repair', [ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["DISTANCE"]])
 
         price_components = [
-            COLUMNS["BASE_FARE"], COLUMNS["DISTANCE"], COLUMNS["KM_RATE"],
-            COLUMNS["DURATION"], COLUMNS["MIN_RATE"]
+            ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["DISTANCE"], ALGEBRA_COLUMNS["KM_RATE"],
+            ALGEBRA_COLUMNS["DURATION"], ALGEBRA_COLUMNS["MIN_RATE"]
         ]
-        mask_repair_price = self.df[COLUMNS["PRICE"]].isnull() & self.df[price_components].notnull().all(axis=1)
+        mask_repair_price = self.df[ALGEBRA_COLUMNS["PRICE"]].isnull() & self.df[price_components].notnull().all(axis=1)
 
         if mask_repair_price.any():
-            self.df.loc[mask_repair_price, COLUMNS["PRICE"]] = (
-                self.df.loc[mask_repair_price, COLUMNS["BASE_FARE"]] +
-                (self.df.loc[mask_repair_price, COLUMNS["DISTANCE"]] * self.df.loc[mask_repair_price, COLUMNS["KM_RATE"]]) +
-                (self.df.loc[mask_repair_price, COLUMNS["DURATION"]] * self.df.loc[mask_repair_price, COLUMNS["MIN_RATE"]])
+            self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["PRICE"]] = (
+                self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["BASE_FARE"]] +
+                (self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["DISTANCE"]] * self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["KM_RATE"]]) +
+                (self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["DURATION"]] * self.df.loc[mask_repair_price, ALGEBRA_COLUMNS["MIN_RATE"]])
             )
 
         distance_components = [
-            COLUMNS["BASE_FARE"], COLUMNS["KM_RATE"], COLUMNS["MIN_RATE"],
-            COLUMNS["DURATION"], COLUMNS["PRICE"]
+            ALGEBRA_COLUMNS["BASE_FARE"], ALGEBRA_COLUMNS["KM_RATE"], ALGEBRA_COLUMNS["MIN_RATE"],
+            ALGEBRA_COLUMNS["DURATION"], ALGEBRA_COLUMNS["PRICE"]
         ]
-        mask_repair_distance = self.df[COLUMNS["DISTANCE"]].isnull() & self.df[distance_components].notnull().all(axis=1)
-        mask_repair_distance &= (self.df[COLUMNS["KM_RATE"]] != 0)
+        mask_repair_distance = self.df[ALGEBRA_COLUMNS["DISTANCE"]].isnull() & self.df[distance_components].notnull().all(axis=1)
+        mask_repair_distance &= (self.df[ALGEBRA_COLUMNS["KM_RATE"]] != 0)
 
         if mask_repair_distance.any():
-            self.df.loc[mask_repair_distance, COLUMNS["DISTANCE"]] = (
-                (self.df.loc[mask_repair_distance, COLUMNS["PRICE"]] -
-                 self.df.loc[mask_repair_distance, COLUMNS["BASE_FARE"]] -
-                 (self.df.loc[mask_repair_distance, COLUMNS["DURATION"]] * self.df.loc[mask_repair_distance, COLUMNS["MIN_RATE"]])) /
-                self.df.loc[mask_repair_distance, COLUMNS["KM_RATE"]]
+            self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["DISTANCE"]] = (
+                (self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["PRICE"]] -
+                 self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["BASE_FARE"]] -
+                 (self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["DURATION"]] * self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["MIN_RATE"]])) /
+                self.df.loc[mask_repair_distance, ALGEBRA_COLUMNS["KM_RATE"]]
             )
 
-        self._log_repair_status('After Repair', [COLUMNS["PRICE"], COLUMNS["DISTANCE"]])
+        self._log_repair_status('After Repair', [ALGEBRA_COLUMNS["PRICE"], ALGEBRA_COLUMNS["DISTANCE"]])
 
     def repair_using_imputation(self, max_cat_values: int = 5):
         """
@@ -182,19 +236,24 @@ class TaxiData:
     def _find_best_regression_model(X, y):
         """Function tries both linear regression/random forest to predict column values and returns
         the model with lowest rsme"""
-        Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, random_state=42, train_size=0.7)
+        Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, random_state=42, train_size=0.8)
         lr_model = LinearRegression().fit(Xtrain, ytrain)
         rf_model = RandomForestRegressor(n_estimators=100, random_state=42).fit(Xtrain, ytrain)
-        linear_regression_rsme = TaxiData._calculate_rsme(lr_model, Xtest, ytest)
-        random_forest_rsme = TaxiData._calculate_rsme(rf_model, Xtest, ytest)
-        print(f"{linear_regression_rsme=}")
-        print(f"{random_forest_rsme=}")
-        return lr_model if linear_regression_rsme < random_forest_rsme else rf_model
+        lr_error_dict = TaxiData._calculate_errors(lr_model, Xtest, ytest)
+        rf_error_dict = TaxiData._calculate_errors(rf_model, Xtest, ytest)
+        print(f"{lr_error_dict=}")
+        print(f"{rf_error_dict=}")
+        return lr_model if lr_error_dict["rmse"] < rf_error_dict["rmse"] else rf_model
 
     @staticmethod
-    def _calculate_rsme(model, Xtest, ytest):
+    def _calculate_errors(model, Xtest, ytest):
         y_pred = model.predict(Xtest)
-        return root_mean_squared_error(y_pred=y_pred, y_true=ytest)
+        error_dict = {}
+        error_dict["r2"] = r2_score(y_pred=y_pred, y_true=ytest)
+        error_dict["mae"] = mean_absolute_error(y_pred=y_pred, y_true=ytest)
+        error_dict["mse"] = mean_squared_error(y_pred=y_pred, y_true=ytest)
+        error_dict["rmse"] = root_mean_squared_error(y_pred=y_pred, y_true=ytest)
+        return error_dict
 
     @staticmethod
     def _find_best_classification_model(X, y):
@@ -223,13 +282,18 @@ def find_categorical_columns(df:pd.DataFrame, max_cat_values:int = 5) -> list[st
     return category_columns
     
 if __name__ == "__main__":
-    taxi_data = TaxiData(ORIGINAL_CSV_PATH)
-    print("Data before cleaning")
-    print(taxi_data.df.info())
-    print("Data after algebra cleaning")
-    taxi_data.repair_data_using_algebra()
-    print(taxi_data.df.info())
-    print("Data after using machinelearning repair")
-    taxi_data.repair_using_imputation(5)
-    print(taxi_data.df.info())
+    sample_trip = Trip(
+    Trip_Distance_km=5.0,
+    Time_of_Day='Morning',
+    Day_of_Week='Mon',
+    Passenger_Count=1,
+    Traffic_Conditions='Light',
+    Weather='Sunny'
+)
+    data = TaxiData(ALTERED_CSV_PATH)
+    data.train_model()
+    
+    y_pred = data.predict_trip_price(sample_trip)
+    print(y_pred)
+
     
