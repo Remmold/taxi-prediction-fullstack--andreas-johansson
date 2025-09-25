@@ -1,7 +1,7 @@
 from importlib.resources import files
 from pathlib import Path
 ORIGINAL_CSV_PATH = files("taxipred").joinpath("data/taxi_trip_pricing.csv")
-ALTERED_CSV_PATH = files("taxipred").joinpath("data/altered_taxi_trip_pricing.csv")
+CLEANED_CSV_PATH = files("taxipred").joinpath("data/altered_taxi_trip_pricing.csv")
 
 ALGEBRA_COLUMNS = {
     "DISTANCE": "Trip_Distance_km",
