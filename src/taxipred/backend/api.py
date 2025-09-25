@@ -11,6 +11,6 @@ async def read_taxi_data():
     return taxi_data.to_json()
 
 @app.post("/taxi/predict")
-async def predict(trip:Trip) ->int :
+async def predict(trip:Trip) ->float :
     prediction = taxi_data.predict_trip_price(trip)
     return prediction
