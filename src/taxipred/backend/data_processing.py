@@ -61,6 +61,7 @@ class TaxiData:
         model = self._find_best_regression_model(X=X_encoded, y=y)
         
         # Save the trained model
+        print("Saving model to disk...")
         joblib.dump(model, DATA_PATH / "taxi_model.joblib")
 
 
@@ -430,7 +431,5 @@ if __name__ == "__main__":
     data = TaxiData(CLEANED_CSV_PATH)
     data.train_model()
     
-    y_pred = data.predict_trip_price(sample_trip)
-    print(y_pred)
 
     
