@@ -18,6 +18,12 @@ FEATURES_COLUMNS = [
     "Passenger_Count",
     "Traffic_Conditions",
     "Weather",
+    "Trip_Duration_Minutes",
+]
+COLUMNS_TO_DROP = [
+    "Base_Fare",
+    "Per_Km_Rate",
+    "Per_Minute_Rate",
 ]
 
 DATA_PATH = Path(__file__).parents[1] / "data"
