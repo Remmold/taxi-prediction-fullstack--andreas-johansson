@@ -3,7 +3,7 @@ import json
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import root_mean_squared_error,r2_score,mean_absolute_error,mean_squared_error
+from sklearn.metrics import root_mean_squared_error,r2_score,mean_absolute_error,mean_squared_error,accuracy_score 
 from taxipred.utils.constants import ORIGINAL_CSV_PATH, CLEANED_CSV_PATH ,ALGEBRA_COLUMNS,FEATURES_COLUMNS,DATA_PATH
 from taxipred.backend.trip import Trip
 import joblib
@@ -239,7 +239,7 @@ class TaxiData:
             return pd.Series(dtype=float)
 
         # Call the updated model-finding function with the threshold
-        best_model = self._find_best_regression_model(X_train_clean, y_train_clean, r2_threshold=0.8)
+        best_model = self._find_best_regression_model(X_train_clean, y_train_clean, r2_threshold=0.5)
 
         # --- KEY CHANGE: Check if a model was actually returned ---
         if best_model is None:
@@ -287,10 +287,16 @@ class TaxiData:
         if X_train_clean.empty:
             return pd.Series(dtype=object)
 
-        best_model = self._find_best_classification_model(X_train_clean, y_train_clean)
+        # Call the updated function with the threshold
+        best_model = self._find_best_classification_model(X_train_clean, y_train_clean, accuracy_threshold=0.6)
 
+        # --- KEY CHANGE: Check if a model was actually returned ---
+        if best_model is None:
+            print(f"Skipping imputation for '{target_column}' as no model met the quality threshold.")
+            return pd.Series(dtype=object)
+
+        # Continue with prediction logic only if a valid model was found
         X_predict = predict_df_orig.drop(target_column, axis=1)
-
         X_predict_encoded = pd.get_dummies(X_predict, columns=find_categorical_columns(X_predict, max_cat_values=max_cat_values))
         X_predict_encoded = X_predict_encoded.reindex(columns=X_encoded.columns, fill_value=0)
 
@@ -306,7 +312,7 @@ class TaxiData:
 
 
     @staticmethod
-    def _find_best_regression_model(X, y, r2_threshold=0.5): # Add a threshold parameter
+    def _find_best_regression_model(X, y, r2_threshold=0.6): # Add a threshold parameter
         """
         Tries both linear regression/random forest and returns the best model
         ONLY if its R^2 score is above the threshold. Otherwise, returns None.
@@ -356,12 +362,42 @@ class TaxiData:
         error_dict["diff"] = error_dict["rmse"]/np.abs(ytest.mean())
         return error_dict
 
+
+    # ... inside your TaxiData class ...
+
     @staticmethod
-    def _find_best_classification_model(X, y):
-        """note that currently only know how to operate 1 model. potentially refactor this later"""
-        rf_model = RandomForestClassifier()
-        rf_model.fit(X, y)
-        return rf_model
+    def _find_best_classification_model(X, y, accuracy_threshold=0.5): # Add threshold parameter
+        """
+        Trains a RandomForestClassifier and returns it ONLY if its accuracy
+        on a test set is above the threshold. Otherwise, returns None.
+        """
+        # Return None immediately if there's no data to train on
+        if X.empty or y.empty or len(y.unique()) < 2:
+            print(f"Skipping model for '{y.name}', not enough data or classes.")
+            return None
+        
+        # Split data to evaluate accuracy fairly
+        # stratify=y is important for classification, especially with imbalanced classes
+        Xtrain, Xtest, ytrain, ytest = train_test_split(
+            X, y, random_state=42, train_size=0.8, stratify=y
+        )
+        
+        rf_model = RandomForestClassifier(random_state=42)
+        rf_model.fit(Xtrain, ytrain)
+        
+        # Evaluate model on the held-out test set
+        y_pred = rf_model.predict(Xtest)
+        accuracy = accuracy_score(ytest, y_pred)
+        
+        print(f"Classifier accuracy for column '{y.name}': {accuracy:.4f} (Threshold: {accuracy_threshold})")
+        
+        # --- KEY CHANGE: Check the model's accuracy against the threshold ---
+        if accuracy >= accuracy_threshold:
+            print(f"Classifier met the accuracy threshold.")
+            return rf_model
+        else:
+            print(f"Classifier did not meet the accuracy threshold.")
+            return None
 
     @staticmethod
     def _map_category(series:pd.Series) -> dict:
