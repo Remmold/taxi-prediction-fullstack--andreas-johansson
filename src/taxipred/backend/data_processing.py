@@ -305,7 +305,7 @@ class TaxiData:
 
         Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, random_state=42, train_size=0.8)
         lr_model = LinearRegression().fit(Xtrain, ytrain)
-        rf_model = RandomForestRegressor(n_estimators=100, random_state=42).fit(Xtrain, ytrain)
+        rf_model = RandomForestRegressor(random_state=42).fit(Xtrain, ytrain)
 
         lr_error_dict = TaxiData._calculate_errors(lr_model, Xtest, ytest)
         rf_error_dict = TaxiData._calculate_errors(rf_model, Xtest, ytest)
@@ -316,12 +316,14 @@ class TaxiData:
 
     @staticmethod
     def _calculate_errors(model, Xtest, ytest):
+        import numpy as np
         y_pred = model.predict(Xtest)
         error_dict = {}
         error_dict["r2"] = r2_score(y_pred=y_pred, y_true=ytest)
         error_dict["mae"] = mean_absolute_error(y_pred=y_pred, y_true=ytest)
         error_dict["mse"] = mean_squared_error(y_pred=y_pred, y_true=ytest)
         error_dict["rmse"] = root_mean_squared_error(y_pred=y_pred, y_true=ytest)
+        error_dict["diff"] = error_dict["rmse"]/np.abs(ytest.mean())
         return error_dict
 
     @staticmethod
