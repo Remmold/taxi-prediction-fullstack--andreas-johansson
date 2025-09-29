@@ -238,8 +238,15 @@ class TaxiData:
         if X_train_clean.empty:
             return pd.Series(dtype=float)
 
-        best_model = self._find_best_regression_model(X_train_clean, y_train_clean)
+        # Call the updated model-finding function with the threshold
+        best_model = self._find_best_regression_model(X_train_clean, y_train_clean, r2_threshold=0.8)
 
+        # --- KEY CHANGE: Check if a model was actually returned ---
+        if best_model is None:
+            print(f"Skipping imputation for '{target_column}' as no model met the quality threshold.")
+            return pd.Series(dtype=float) # Return an empty series to signify failure
+
+        # Reindex and predict only if a valid model was found
         X_predict = X_predict.reindex(columns=X_train_clean.columns, fill_value=0)
 
         predict_indices = X_predict.dropna().index
@@ -299,20 +306,43 @@ class TaxiData:
 
 
     @staticmethod
-    def _find_best_regression_model(X, y):
-        """Function tries both linear regression/random forest to predict column values and returns
-        the model with lowest rsme"""
+    def _find_best_regression_model(X, y, r2_threshold=0.5): # Add a threshold parameter
+        """
+        Tries both linear regression/random forest and returns the best model
+        ONLY if its R^2 score is above the threshold. Otherwise, returns None.
+        """
+        # Return None immediately if there's no data to train on
+        if X.empty or y.empty:
+            return None
 
         Xtrain, Xtest, ytrain, ytest = train_test_split(X, y, random_state=42, train_size=0.8)
+        
+        # Train models
         lr_model = LinearRegression().fit(Xtrain, ytrain)
         rf_model = RandomForestRegressor(random_state=42).fit(Xtrain, ytrain)
 
+        # Evaluate models
         lr_error_dict = TaxiData._calculate_errors(lr_model, Xtest, ytest)
         rf_error_dict = TaxiData._calculate_errors(rf_model, Xtest, ytest)
-        print(f"{lr_error_dict=}")
-        print(f"{rf_error_dict=}")
+        
+        print(f"Linear Regression errors for column '{y.name}': {lr_error_dict}")
+        print(f"Random Forest errors for column '{y.name}': {rf_error_dict}")
 
-        return lr_model if lr_error_dict["rmse"] < rf_error_dict["rmse"] else rf_model
+        # Determine the best model and its R^2 score
+        if lr_error_dict["rmse"] < rf_error_dict["rmse"]:
+            best_model = lr_model
+            best_r2 = lr_error_dict["r2"]
+        else:
+            best_model = rf_model
+            best_r2 = rf_error_dict["r2"]
+
+        # --- KEY CHANGE: Check the best model's R^2 against the threshold ---
+        if best_r2 >= r2_threshold:
+            print(f"Best model selected with R^2: {best_r2:.4f} (Threshold: {r2_threshold})")
+            return best_model
+        else:
+            print(f"No model met the R^2 threshold of {r2_threshold}. Best R^2 was {best_r2:.4f}.")
+            return None
 
     @staticmethod
     def _calculate_errors(model, Xtest, ytest):
