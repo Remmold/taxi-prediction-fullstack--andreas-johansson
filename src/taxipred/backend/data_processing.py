@@ -313,7 +313,7 @@ class TaxiData:
 
 
     @staticmethod
-    def _find_best_regression_model(X, y, r2_threshold=0.6): # Add a threshold parameter
+    def _find_best_regression_model(X, y, r2_threshold=0.5): # Add a threshold parameter
         """
         Tries both linear regression/random forest and returns the best model
         ONLY if its R^2 score is above the threshold. Otherwise, returns None.
@@ -362,9 +362,6 @@ class TaxiData:
         error_dict["rmse"] = root_mean_squared_error(y_pred=y_pred, y_true=ytest)
         error_dict["diff"] = error_dict["rmse"]/np.abs(ytest.mean())
         return error_dict
-
-
-    # ... inside your TaxiData class ...
 
     @staticmethod
     def _find_best_classification_model(X, y, accuracy_threshold=0.5): # Add threshold parameter
@@ -420,14 +417,7 @@ def find_categorical_columns(df:pd.DataFrame, max_cat_values:int = 5) -> list[st
     return category_columns
     
 if __name__ == "__main__":
-    sample_trip = Trip(
-    Trip_Distance_km=5.0,
-    Time_of_Day='Morning',
-    Day_of_Week='Mon',
-    Passenger_Count=1,
-    Traffic_Conditions='Light',
-    Weather='Sunny'
-)
+    
     data = TaxiData(CLEANED_CSV_PATH)
     data.train_model()
     
